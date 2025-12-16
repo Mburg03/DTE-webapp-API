@@ -1,0 +1,22 @@
+const express = require('express');
+const router = express.Router();
+const auth = require('../middleware/auth');
+const requireRole = require('../middleware/requireRole');
+const gmailController = require('../controllers/gmailController');
+
+// Iniciar flujo OAuth (devuelve URL de Google)
+router.get('/auth', auth, requireRole(['basic', 'admin']), gmailController.startAuth);
+
+// Callback de Google (usa state para identificar al usuario)
+router.get('/callback', gmailController.handleCallback);
+
+// Trigger de búsqueda manual
+router.post('/search', auth, requireRole(['basic', 'admin']), gmailController.searchInvoices);
+
+// Estado de conexión
+router.get('/status', auth, requireRole(['basic', 'admin']), gmailController.status);
+
+// Desconectar
+router.delete('/', auth, requireRole(['basic', 'admin']), gmailController.disconnect);
+
+module.exports = router;

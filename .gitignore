@@ -1,0 +1,10 @@
+node_modules
+.env
+uploads
+uploads/zips
+npm-debug.log
+debug.log
+*.log
+npm-debug.log
+debug.log
+*.log
