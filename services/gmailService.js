@@ -202,12 +202,14 @@ const processInvoices = async ({
                         hasRelevant = true;
                     }
 
-                    // Guarda en carpeta por correo
-                    fs.writeFileSync(path.join(emailFolder, part.filename), buffer);
+                    // Guarda en carpeta por correo con nombre sanitizado
+                    const rawName = path.basename(part.filename);
+                    const safeFilename = rawName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
+                    fs.writeFileSync(path.join(emailFolder, safeFilename), buffer);
 
                     // Duplica PDFs en carpeta plana
                     if (ext === '.pdf') {
-                        fs.writeFileSync(path.join(soloPdfDir, `${safeSubject}_${msg.id}_${part.filename}`), buffer);
+                        fs.writeFileSync(path.join(soloPdfDir, `${safeSubject}_${msg.id}_${safeFilename}`), buffer);
                         pdfCount++;
                     }
 
@@ -215,7 +217,7 @@ const processInvoices = async ({
                         jsonCount++;
                     }
 
-                    savedFiles.push(part.filename);
+                    savedFiles.push(safeFilename);
                 });
             }
 

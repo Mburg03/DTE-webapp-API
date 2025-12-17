@@ -149,8 +149,10 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
     await PasswordReset.deleteMany({ user: user._id });
     await PasswordReset.create({ user: user._id, tokenHash, expiresAt });
 
-    // En un sistema real enviaríamos email; para desarrollo devolvemos el token
-    res.json({ ...genericResponse, resetToken: token });
+    // TODO: Enviar email con el token real al usuario (no exponerlo en la respuesta).
+    // Ejemplo: emailService.sendReset(email, token);
+    // En prod devolvemos solo respuesta genérica.
+    res.json(genericResponse);
 });
 
 // @desc    Reset password con token
