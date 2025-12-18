@@ -24,12 +24,20 @@ exports.getKeywords = asyncHandler(async (req, res) => {
 // @access  Private
 exports.addKeyword = asyncHandler(async (req, res) => {
     const { keyword } = req.body;
-    if (!keyword || !keyword.trim()) {
+    const raw = keyword ? keyword.trim() : '';
+    if (!raw) {
         res.status(400);
         throw new Error('Keyword is required');
     }
 
-    const norm = normalize(keyword);
+    // Permitir letras/números/espacios/puntos/guiones/guiones bajos (incluye acentos)
+    const pattern = /^[\p{L}\p{N}\s._-]{2,50}$/u;
+    if (!pattern.test(raw)) {
+        res.status(400);
+        throw new Error('Keyword inválida. Usa letras, números y guiones/puntos (2-50 chars)');
+    }
+
+    const norm = normalize(raw);
     if (norm.length < 2 || norm.length > 50) {
         res.status(400);
         throw new Error('Keyword must be between 2 and 50 characters');
