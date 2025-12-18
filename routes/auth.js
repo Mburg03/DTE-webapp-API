@@ -23,7 +23,9 @@ router.post('/register',
     registerLimiter,
     [
         check('email', 'Por favor incluye un email válido').isEmail(), 
-        check('password', 'El password debe tener 8 o más caracteres').isLength({ min: 8 }),
+        check('password', 'El password debe tener mínimo 8 caracteres, una mayúscula, un número y un símbolo')
+            .isLength({ min: 8 })
+            .matches(/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/),
         check('name', 'El nombre es obligatorio').not().isEmpty(),
         check('dui', 'El DUI es obligatorio').not().isEmpty()
 

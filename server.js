@@ -67,7 +67,23 @@ app.use(
     })
 );
 app.use(helmet());
-app.use(morgan('dev'));
+// Logging: verbose en dev, combined en prod
+if (process.env.NODE_ENV === 'production') {
+    app.use(morgan('combined'));
+} else {
+    app.use(morgan('dev'));
+}
+
+// En producción, exigir HTTPS (Railway envía x-forwarded-proto)
+if (process.env.NODE_ENV === 'production') {
+    app.use((req, res, next) => {
+        const proto = req.get('x-forwarded-proto');
+        if (proto && proto !== 'https') {
+            return res.status(400).json({ message: 'HTTPS required' });
+        }
+        return next();
+    });
+}
 
 // Routes
 app.use('/api/auth', limiter, require('./routes/auth'));

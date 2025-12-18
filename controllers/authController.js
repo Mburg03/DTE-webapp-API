@@ -58,11 +58,7 @@ exports.register = asyncHandler(async (req, res) => {
     const payload = { user: { id: user.id, role: user.role } };
     
     // Usamos version sincrona para asegurar que asyncHandler capture errores
-    const token = jwt.sign(
-        payload,
-        process.env.JWT_SECRET,
-        { expiresIn: '5d' }
-    );
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
     res.json({ token });
 });
@@ -97,11 +93,7 @@ exports.login = asyncHandler(async (req, res) => {
 
     // 4. Generar Token
     const payload = { user: { id: user.id, role: user.role } };
-    const token = jwt.sign(
-        payload,
-        process.env.JWT_SECRET,
-        { expiresIn: '5d' }
-    );
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '2h' });
 
     res.json({ token });
 });
@@ -160,9 +152,10 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 // @access  Public
 exports.resetPassword = asyncHandler(async (req, res) => {
     const { token, password } = req.body;
-    if (!token || !password || password.length < 8) {
+    const passwordStrong = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
+    if (!token || !password || !passwordStrong.test(password)) {
         res.status(400);
-        throw new Error('Token inválido o password muy corta');
+        throw new Error('Token inválido o password no cumple requisitos');
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
