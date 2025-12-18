@@ -40,10 +40,19 @@ requiredEnv.forEach((key) => {
 connectDB();
 
 // Middleware
-app.use(express.json());
+// Límite de body para evitar payloads grandes
+app.use(express.json({ limit: '1mb' }));
+
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
     : [];
+
+// En producción exigimos que se configure al menos un origen
+if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+    console.error('CORS_ORIGIN must be set in production');
+    process.exit(1);
+}
+
 app.use(
     cors({
         origin: (origin, callback) => {
