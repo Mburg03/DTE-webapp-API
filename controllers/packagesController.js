@@ -28,6 +28,12 @@ const parseDates = (startDate, endDate) => {
         err.status = 400;
         throw err;
     }
+    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    if (diffDays > 31) {
+        const err = new Error('Date range too large. Please request up to 31 days.');
+        err.status = 400;
+        throw err;
+    }
     const endInclusive = new Date(end);
     endInclusive.setDate(endInclusive.getDate() + 1);
     return {
@@ -156,8 +162,9 @@ exports.download = asyncHandler(async (req, res) => {
 // @route GET /api/packages
 // @access Private
 exports.list = asyncHandler(async (req, res) => {
-    const page = parseInt(req.query.page || '1', 10);
-    const limit = parseInt(req.query.limit || '10', 10);
+    const page = Math.max(parseInt(req.query.page || '1', 10), 1);
+    const reqLimit = parseInt(req.query.limit || '10', 10);
+    const limit = Math.min(Math.max(reqLimit, 1), 50);
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([

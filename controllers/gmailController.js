@@ -97,6 +97,11 @@ exports.searchInvoices = asyncHandler(async (req, res) => {
         res.status(400);
         throw new Error('startDate must be before endDate');
     }
+    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    if (diffDays > 31) {
+        res.status(400);
+        throw new Error('Date range too large. Please request up to 31 days.');
+    }
 
     // Gmail before es exclusivo, sumamos 1 día para que incluya endDate
     const endInclusive = new Date(end);

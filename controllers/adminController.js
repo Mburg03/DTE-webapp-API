@@ -7,8 +7,9 @@ const Package = require('../models/Package');
 // @route GET /api/admin/users
 // @access Admin
 exports.listUsers = asyncHandler(async (req, res) => {
-    const page = parseInt(req.query.page || '1', 10);
-    const limit = parseInt(req.query.limit || '10', 10);
+    const page = Math.max(parseInt(req.query.page || '1', 10), 1);
+    const reqLimit = parseInt(req.query.limit || '10', 10);
+    const limit = Math.min(Math.max(reqLimit, 1), 50);
     const skip = (page - 1) * limit;
 
     const pipeline = [
