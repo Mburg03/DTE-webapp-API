@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const rateLimit = require('express-rate-limit');
 const { errorHandler } = require('./middleware/errorMiddleware');
@@ -42,6 +43,7 @@ connectDB();
 // Middleware
 // Límite de body para evitar payloads grandes
 app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
@@ -67,7 +69,23 @@ app.use(
     })
 );
 app.use(helmet());
-app.use(morgan('dev'));
+// Logging: verbose en dev, combined en prod
+if (process.env.NODE_ENV === 'production') {
+    app.use(morgan('combined'));
+} else {
+    app.use(morgan('dev'));
+}
+
+// En producción, exigir HTTPS (Railway envía x-forwarded-proto)
+if (process.env.NODE_ENV === 'production') {
+    app.use((req, res, next) => {
+        const proto = req.get('x-forwarded-proto');
+        if (proto && proto !== 'https') {
+            return res.status(400).json({ message: 'HTTPS required' });
+        }
+        return next();
+    });
+}
 
 // Routes
 app.use('/api/auth', limiter, require('./routes/auth'));
