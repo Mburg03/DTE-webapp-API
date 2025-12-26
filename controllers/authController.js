@@ -17,7 +17,7 @@ const sendTokens = (res, payload) => {
     res.cookie('refreshToken', refreshToken, {
         httpOnly: true,
         secure: isProd,
-        sameSite: 'lax',
+        sameSite: isProd ? 'none' : 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 días
     });
     return accessToken;

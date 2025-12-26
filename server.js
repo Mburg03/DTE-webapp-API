@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const { errorHandler } = require('./middleware/errorMiddleware');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Max 100 peticiones por 15 minutos por IP, para seguridad
 const limiter =
