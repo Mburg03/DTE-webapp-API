@@ -1,6 +1,8 @@
 const { google } = require('googleapis');
 const { createOAuthClient } = require('../config/gmail');
 const { decrypt } = require('../utils/encryption');
+const axios = require('axios');
+const crypto = require('crypto');
 
 const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 
@@ -60,7 +62,7 @@ const getGmailClient = (accessToken) => {
     return google.gmail({ version: 'v1', auth: oauth2Client });
 };
 
-const listMessages = async (accessToken, query, maxMessages = 100) => {
+const listMessages = async (accessToken, query, maxMessages = 100, includeSpam = false) => {
     const gmail = getGmailClient(accessToken);
     let messages = [];
     let nextPageToken = null;
@@ -69,6 +71,7 @@ const listMessages = async (accessToken, query, maxMessages = 100) => {
         const res = await gmail.users.messages.list({
             userId: 'me',
             q: query,
+            includeSpamTrash: includeSpam,
             pageToken: nextPageToken,
             maxResults: 70 // Paginar de 70 en 70 (valor anterior)
         });
@@ -103,6 +106,9 @@ const fs = require('fs');
 const path = require('path');
 const { baseKeywords } = require('../config/searchConfig');
 
+// Hosts permitidos para descargas vía link (caso Walmart/Edicom)
+const allowedLinkHosts = ['s.edicom.eu', 'edicomgroup.com', 'edicom.net'];
+
 // Extrae partes de manera recursiva (algunos mensajes anidan adjuntos)
 const collectParts = (payload, acc = []) => {
     if (!payload) return acc;
@@ -118,6 +124,60 @@ const ensureDir = (dir) => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 };
 
+const decodeBase64Url = (data) => {
+    const buff = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    return buff.toString('utf8');
+};
+
+const extractLinksFromPayload = (payload) => {
+    const links = [];
+    const parts = collectParts(payload, []);
+    for (const part of parts) {
+        const mime = part.mimeType || '';
+        const body = part.body?.data;
+        if (!body) continue;
+        if (mime.includes('text/plain') || mime.includes('text/html')) {
+            try {
+                const text = decodeBase64Url(body);
+                const found = text.match(/https?:\/\/[^\s"'<>]+/g) || [];
+                links.push(...found);
+            } catch (err) {
+                // ignoramos errores de decode
+            }
+        }
+    }
+    return links;
+};
+
+const sanitizeFilename = (name) => {
+    const raw = path.basename(name || 'archivo.pdf');
+    return raw.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
+};
+
+const hashBuffer = (buffer) => {
+    return crypto.createHash('sha256').update(buffer).digest('hex');
+};
+
+const isAllowedLink = (urlStr) => {
+    try {
+        const u = new URL(urlStr);
+        return allowedLinkHosts.includes(u.hostname.toLowerCase());
+    } catch {
+        return false;
+    }
+};
+
+const downloadPdfFromLink = async (url) => {
+    const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 20000 });
+    const contentType = res.headers['content-type'] || '';
+    if (!contentType.includes('pdf') && !url.toLowerCase().endsWith('.pdf')) {
+        const err = new Error('Link is not a PDF');
+        err.code = 'NOT_PDF';
+        throw err;
+    }
+    return Buffer.from(res.data);
+};
+
 const processInvoices = async ({
     accessToken,
     startEpoch,
@@ -125,7 +185,9 @@ const processInvoices = async ({
     userId,
     batchLabel,
     maxMessages = 100,
-    customKeywords = []
+    customKeywords = [],
+    maxDtes = Infinity,
+    includeSpam = false
 }) => {
     // 1. Construir query
     const allKeywords = [...new Set([...baseKeywords, ...customKeywords])];
@@ -134,7 +196,7 @@ const processInvoices = async ({
     const query = `${subjectQuery} has:attachment ${dateQuery}`;
 
     const gmail = getGmailClient(accessToken);
-    const messages = await listMessages(accessToken, query, maxMessages);
+    const messages = await listMessages(accessToken, query, maxMessages, includeSpam);
 
     const baseDir = path.join(__dirname, '../uploads/zips', String(userId), batchLabel);
     const correosDir = path.join(baseDir, 'JSON_y_PDFS');
@@ -148,6 +210,8 @@ const processInvoices = async ({
     let pdfCount = 0;
     let jsonCount = 0;
     const attachmentSeen = new Set();
+    const linkSeen = new Set();
+    const hashSeen = new Set(); // dedupe global por contenido
 
     // Ejecuta tareas con concurrencia limitada (pool). Aquí se usa para descargar adjuntos más rápido.
     const runWithPool = async (tasks, limit = 8) => {
@@ -178,6 +242,9 @@ const processInvoices = async ({
             const tasks = [];
 
             for (const part of parts) {
+                if (maxDtes !== Infinity && jsonCount >= maxDtes) {
+                    continue; // límite alcanzado
+                }
                 if (!part.filename || !part.body || !part.body.attachmentId) continue;
                 const ext = path.extname(part.filename).toLowerCase();
                 if (ext !== '.pdf' && ext !== '.json') continue;
@@ -191,11 +258,21 @@ const processInvoices = async ({
                 }
 
                 tasks.push(async () => {
+                    if (maxDtes !== Infinity && jsonCount >= maxDtes && ext === '.json') {
+                        return;
+                    }
                     attachmentSeen.add(attKey);
                     if (ext === '.pdf') filenameSeen.add(part.filename);
 
                     const attachmentData = await getAttachment(gmail, msg.id, part.body.attachmentId);
                     const buffer = Buffer.from(attachmentData, 'base64');
+
+                    // Dedupe por hash global
+                    const hash = hashBuffer(buffer);
+                    if (hashSeen.has(hash)) {
+                        return;
+                    }
+                    hashSeen.add(hash);
 
                     if (!hasRelevant) {
                         ensureDir(emailFolder);
@@ -203,8 +280,7 @@ const processInvoices = async ({
                     }
 
                     // Guarda en carpeta por correo con nombre sanitizado
-                    const rawName = path.basename(part.filename);
-                    const safeFilename = rawName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
+                    const safeFilename = sanitizeFilename(part.filename);
                     fs.writeFileSync(path.join(emailFolder, safeFilename), buffer);
 
                     // Duplica PDFs en carpeta plana
@@ -214,6 +290,9 @@ const processInvoices = async ({
                     }
 
                     if (ext === '.json') {
+                        if (maxDtes !== Infinity && jsonCount >= maxDtes) {
+                            return;
+                        }
                         jsonCount++;
                     }
 
@@ -224,6 +303,39 @@ const processInvoices = async ({
             // Ejecutar descargas con concurrencia limitada por correo
             if (tasks.length) {
                 await runWithPool(tasks, 8);
+            }
+
+            // Descargar PDFs desde links del cuerpo (para correos sin adjunto, ej. Walmart/Edicom)
+            const links = extractLinksFromPayload(fullMsg.payload).filter((l) => isAllowedLink(l));
+            const linkTasks = links
+                .filter((l) => !linkSeen.has(l))
+                .map((link) => async () => {
+                    try {
+                        if (maxDtes !== Infinity && jsonCount >= maxDtes) return;
+                        linkSeen.add(link);
+                        const buffer = await downloadPdfFromLink(link);
+                        const hash = hashBuffer(buffer);
+                        if (hashSeen.has(hash)) return;
+                        hashSeen.add(hash);
+                        if (!hasRelevant) {
+                            ensureDir(emailFolder);
+                            hasRelevant = true;
+                        }
+                        const filenameFromUrl = sanitizeFilename(link.split('/').pop() || 'factura.pdf');
+                        const safeFilename = filenameFromUrl.toLowerCase().endsWith('.pdf')
+                            ? filenameFromUrl
+                            : `${filenameFromUrl}.pdf`;
+                        fs.writeFileSync(path.join(emailFolder, safeFilename), buffer);
+                        fs.writeFileSync(path.join(soloPdfDir, `${safeSubject}_${msg.id}_${safeFilename}`), buffer);
+                        pdfCount++;
+                        savedFiles.push(safeFilename);
+                    } catch (err) {
+                        // ignorar errores de descarga o tipo no PDF
+                    }
+                });
+
+            if (linkTasks.length) {
+                await runWithPool(linkTasks, 4);
             }
 
             if (hasRelevant) {

@@ -11,11 +11,14 @@ const { errorHandler } = require('./middleware/errorMiddleware');
 const app = express();
 
 // Max 100 peticiones por 15 minutos por IP, para seguridad
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: 'Demasiadas peticiones. Por favor, intenta de nuevo en 15 minutos.'
-});
+const limiter =
+    process.env.NODE_ENV === 'production'
+        ? rateLimit({
+              windowMs: 15 * 60 * 1000,
+              max: 100,
+              message: 'Demasiadas peticiones. Por favor, intenta de nuevo en 15 minutos.'
+          })
+        : (req, res, next) => next(); // sin límite en dev
 
 // Basic env validation to fail fast on missing secrets
 const requiredEnv = [
@@ -95,7 +98,7 @@ app.use('/api/packages', limiter, require('./routes/packages'));
 app.use('/api/admin', limiter, require('./routes/admin'));
 
 app.get('/', limiter, (req, res) => {
-    res.json({ msg: 'Factura Automate API Running' });
+    res.json({ msg: 'DORIA API Running' });
 });
 
 

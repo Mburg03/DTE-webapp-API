@@ -7,9 +7,19 @@ const PackageSchema = new mongoose.Schema(
             ref: 'User',
             required: true
         },
+        accountId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'GmailConnection'
+        },
         batchLabel: {
             type: String,
             required: true
+        },
+        startDate: {
+            type: String // YYYY-MM-DD
+        },
+        endDate: {
+            type: String // YYYY-MM-DD
         },
         zipPath: {
             type: String

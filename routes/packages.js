@@ -8,5 +8,6 @@ router.post('/generate', auth, requireRole(['basic', 'admin']), packagesControll
 router.get('/download/:id', auth, requireRole(['basic', 'admin']), packagesController.download);
 router.get('/', auth, requireRole(['basic', 'admin']), packagesController.list);
 router.get('/latest', auth, requireRole(['basic', 'admin']), packagesController.latest);
+router.get('/usage', auth, requireRole(['basic', 'admin']), packagesController.usage);
 
 module.exports = router;

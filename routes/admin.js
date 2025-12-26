@@ -8,6 +8,7 @@ router.get('/users', auth, isAdmin, adminController.listUsers);
 router.get('/users/:id', auth, isAdmin, adminController.getUser);
 router.patch('/users/:id/password', auth, isAdmin, adminController.resetPassword);
 router.patch('/users/:id/role', auth, isAdmin, adminController.updateRole);
+router.patch('/users/:id/plan', auth, isAdmin, adminController.updatePlan);
 router.delete('/users/:id', auth, isAdmin, adminController.deleteUser);
 
 module.exports = router;

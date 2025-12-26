@@ -10,13 +10,15 @@ router.get('/auth', auth, requireRole(['basic', 'admin']), gmailController.start
 // Callback de Google (usa state para identificar al usuario)
 router.get('/callback', gmailController.handleCallback);
 
-// Trigger de búsqueda manual
-router.post('/search', auth, requireRole(['basic', 'admin']), gmailController.searchInvoices);
+// Reemplazo de cuenta (inicia OAuth con intent)
+router.post('/replace', auth, requireRole(['basic', 'admin']), gmailController.startReplace);
 
-// Estado de conexión
+// Estado/listado de cuentas conectadas
 router.get('/status', auth, requireRole(['basic', 'admin']), gmailController.status);
 
 // Desconectar
-router.delete('/', auth, requireRole(['basic', 'admin']), gmailController.disconnect);
+router.delete('/:id', auth, requireRole(['basic', 'admin']), gmailController.disconnect);
+// Activar cuenta como primaria
+router.patch('/:id/activate', auth, requireRole(['basic', 'admin']), gmailController.activate);
 
 module.exports = router;
