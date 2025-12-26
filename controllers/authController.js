@@ -7,6 +7,21 @@ const crypto = require('crypto');
 const PasswordReset = require('../models/PasswordReset');
 
 const sanitizeEmail = (email = '') => email.trim().toLowerCase();
+const signAccessToken = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+const signRefreshToken = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+const sendTokens = (res, payload) => {
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken(payload);
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 días
+    });
+    return accessToken;
+};
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -20,11 +35,20 @@ exports.register = asyncHandler(async (req, res) => {
     }
 
     const email = sanitizeEmail(req.body.email);
-    const { password, name, dui } = req.body;
+    const { password } = req.body;
+    const name = (req.body.name || '').trim();
+    const dui = (req.body.dui || '').trim();
 
-    if (!dui || !dui.trim()) {
+    const namePattern = /^[a-zA-Z0-9 .,'-]{2,80}$/;
+    if (!name || !namePattern.test(name)) {
         res.status(400);
-        throw new Error('DUI es obligatorio');
+        throw new Error('Nombre inválido. Usa solo letras, números y signos simples.');
+    }
+
+    const duiPattern = /^\d{8}-\d$/; // Formato salvadoreño clásico 00000000-0
+    if (!dui || !duiPattern.test(dui)) {
+        res.status(400);
+        throw new Error('DUI inválido. Formato esperado: 00000000-0');
     }
 
     // 2. Verificar duplicados
@@ -56,15 +80,8 @@ exports.register = asyncHandler(async (req, res) => {
 
     // 5. Generar Token
     const payload = { user: { id: user.id, role: user.role } };
-    
-    // Usamos version sincrona para asegurar que asyncHandler capture errores
-    const token = jwt.sign(
-        payload,
-        process.env.JWT_SECRET,
-        { expiresIn: '5d' }
-    );
-
-    res.json({ token });
+    const accessToken = sendTokens(res, payload);
+    res.json({ token: accessToken });
 });
 
 // @desc    Auth user & get token
@@ -97,13 +114,8 @@ exports.login = asyncHandler(async (req, res) => {
 
     // 4. Generar Token
     const payload = { user: { id: user.id, role: user.role } };
-    const token = jwt.sign(
-        payload,
-        process.env.JWT_SECRET,
-        { expiresIn: '5d' }
-    );
-
-    res.json({ token });
+    const accessToken = sendTokens(res, payload);
+    res.json({ token: accessToken });
 });
 
 // @desc    Get current user profile
@@ -122,9 +134,8 @@ exports.me = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/logout
 // @access  Private
 exports.logout = asyncHandler(async (req, res) => {
-    // Con JWT sin estado, "logout" se maneja en el cliente borrando el token.
-    // Devolvemos mensaje para que el frontend lo sepa.
-    res.json({ msg: 'Logged out. Please delete token on client.' });
+    res.clearCookie('refreshToken');
+    res.json({ msg: 'Logged out. Token invalidated on client and refresh cleared.' });
 });
 
 // @desc    Forgot password (genera token)
@@ -149,8 +160,10 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
     await PasswordReset.deleteMany({ user: user._id });
     await PasswordReset.create({ user: user._id, tokenHash, expiresAt });
 
-    // En un sistema real enviaríamos email; para desarrollo devolvemos el token
-    res.json({ ...genericResponse, resetToken: token });
+    // TODO: Enviar email con el token real al usuario (no exponerlo en la respuesta).
+    // Ejemplo: emailService.sendReset(email, token);
+    // En prod devolvemos solo respuesta genérica.
+    res.json(genericResponse);
 });
 
 // @desc    Reset password con token
@@ -158,9 +171,10 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 // @access  Public
 exports.resetPassword = asyncHandler(async (req, res) => {
     const { token, password } = req.body;
-    if (!token || !password || password.length < 8) {
+    const passwordStrong = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
+    if (!token || !password || !passwordStrong.test(password)) {
         res.status(400);
-        throw new Error('Token inválido o password muy corta');
+        throw new Error('Token inválido o password no cumple requisitos');
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -186,5 +200,26 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
     await PasswordReset.deleteMany({ user: user._id });
 
-    res.json({ msg: 'Password actualizada' });
+    res.clearCookie('refreshToken');
+    res.json({ msg: 'Password actualizada. Vuelve a iniciar sesión.' });
+});
+
+// @desc    Refrescar access token usando refresh cookie
+// @route   POST /api/auth/refresh
+// @access  Public (usa refresh cookie HttpOnly)
+exports.refresh = asyncHandler(async (req, res) => {
+    const token = req.cookies?.refreshToken;
+    if (!token) {
+        res.status(401);
+        throw new Error('No refresh token');
+    }
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const payload = { user: { id: decoded.user.id, role: decoded.user.role } };
+        const accessToken = signAccessToken(payload);
+        res.json({ token: accessToken });
+    } catch (err) {
+        res.status(401);
+        throw new Error('Refresh token inválido o expirado');
+    }
 });

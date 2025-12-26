@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const rateLimit = require('express-rate-limit');
 const { errorHandler } = require('./middleware/errorMiddleware');
@@ -10,11 +11,14 @@ const { errorHandler } = require('./middleware/errorMiddleware');
 const app = express();
 
 // Max 100 peticiones por 15 minutos por IP, para seguridad
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: 'Demasiadas peticiones. Por favor, intenta de nuevo en 15 minutos.'
-});
+const limiter =
+    process.env.NODE_ENV === 'production'
+        ? rateLimit({
+              windowMs: 15 * 60 * 1000,
+              max: 100,
+              message: 'Demasiadas peticiones. Por favor, intenta de nuevo en 15 minutos.'
+          })
+        : (req, res, next) => next(); // sin límite en dev
 
 // Basic env validation to fail fast on missing secrets
 const requiredEnv = [
@@ -40,10 +44,20 @@ requiredEnv.forEach((key) => {
 connectDB();
 
 // Middleware
-app.use(express.json());
+// Límite de body para evitar payloads grandes
+app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
+
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
     : [];
+
+// En producción exigimos que se configure al menos un origen
+if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+    console.error('CORS_ORIGIN must be set in production');
+    process.exit(1);
+}
+
 app.use(
     cors({
         origin: (origin, callback) => {
@@ -58,7 +72,23 @@ app.use(
     })
 );
 app.use(helmet());
-app.use(morgan('dev'));
+// Logging: verbose en dev, combined en prod
+if (process.env.NODE_ENV === 'production') {
+    app.use(morgan('combined'));
+} else {
+    app.use(morgan('dev'));
+}
+
+// En producción, exigir HTTPS (Railway envía x-forwarded-proto)
+if (process.env.NODE_ENV === 'production') {
+    app.use((req, res, next) => {
+        const proto = req.get('x-forwarded-proto');
+        if (proto && proto !== 'https') {
+            return res.status(400).json({ message: 'HTTPS required' });
+        }
+        return next();
+    });
+}
 
 // Routes
 app.use('/api/auth', limiter, require('./routes/auth'));
@@ -68,7 +98,7 @@ app.use('/api/packages', limiter, require('./routes/packages'));
 app.use('/api/admin', limiter, require('./routes/admin'));
 
 app.get('/', limiter, (req, res) => {
-    res.json({ msg: 'Factura Automate API Running' });
+    res.json({ msg: 'DORIA API Running' });
 });
 
 
