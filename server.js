@@ -11,13 +11,18 @@ const { errorHandler } = require('./middleware/errorMiddleware');
 const app = express();
 app.set('trust proxy', 1);
 
-// Max 100 peticiones por 15 minutos por IP, para seguridad
+// Rate limit configurable por env (para producción)
+const rateLimitDisabled = process.env.RATE_LIMIT_DISABLED === 'true';
+const rateWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
+const rateMax = Number(process.env.RATE_LIMIT_MAX || 1000);
 const limiter =
-    process.env.NODE_ENV === 'production'
+    process.env.NODE_ENV === 'production' && !rateLimitDisabled
         ? rateLimit({
-              windowMs: 15 * 60 * 1000,
-              max: 100,
-              message: 'Demasiadas peticiones. Por favor, intenta de nuevo en 15 minutos.'
+              windowMs: Number.isFinite(rateWindowMs) ? rateWindowMs : 15 * 60 * 1000,
+              max: Number.isFinite(rateMax) ? rateMax : 1000,
+              message: 'Demasiadas peticiones. Por favor, intenta de nuevo en 15 minutos.',
+              standardHeaders: true,
+              legacyHeaders: false
           })
         : (req, res, next) => next(); // sin límite en dev
 
@@ -32,7 +37,10 @@ const requiredEnv = [
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',
     'AWS_REGION',
-    'S3_BUCKET'
+    'S3_BUCKET',
+    'CORS_ORIGIN',
+    'FRONTEND_URL',
+    'NODE_ENV'
 ];
 requiredEnv.forEach((key) => {
     if (!process.env[key]) {
