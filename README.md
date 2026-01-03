@@ -1,98 +1,89 @@
-# Factura Automate
-Plataforma que conecta Gmail, busca facturas (PDF/JSON) con keywords en el asunto, las descarga, evita duplicados y arma paquetes ZIP listos para enviar al contador. Guarda metadatos y roles en MongoDB y sube los ZIP a S3.
+# Doria
 
-## Qué resuelve
-- Elimina horas de descarga manual de facturas del correo.
-- Evita olvidos y duplicados (mismo adjunto o mismo nombre dentro del correo).
-- Genera carpetas ordenadas: por correo (JSON_y_PDFS) y plano de PDFs (SOLO_PDF).
-- Historial de paquetes descargables (S3) y últimas ejecuciones visibles en el dashboard.
-- Soporta roles: viewer (solo lectura), basic (usa Gmail/paquetes), admin (gestiona usuarios/roles).
+Doria is a backend-driven platform that connects to Gmail, finds accounting invoices (PDF/JSON), removes duplicates, and generates structured ZIP packages ready to be delivered to an accountant.
 
-## Stack
-- Backend: Node.js + Express, MongoDB Atlas, Google Gmail API (OAuth2), AWS S3 para ZIPs.
-- Frontend: React (Vite) + Tailwind + Axios + React Router.
-- Autenticación: JWT. Tokens Gmail cifrados (ENCRYPTION_KEY).
-- Otros: Nodemon para dev, dotenv para env, Archiver para ZIPs.
+It is designed to replace manual invoice collection from email with a repeatable, auditable, and secure process.
 
-## Estructura
-- `backend/` API y servicios (OAuth, búsqueda, ZIP, S3, keywords, roles, admin, reset password).
-- `frontend/` SPA (login/register/forgot/reset, dashboard, packages, settings, admin users).
+---
 
-## Requisitos
-- Node.js 18+
-- MongoDB Atlas (recomendado)
-- Google Cloud: proyecto con Gmail API, OAuth consent y cliente Web.
-- AWS S3: bucket, keys con permisos de Put/Get y bucket policy acorde.
+## What problem it solves
 
-## Variables de entorno
-Backend (`backend/.env`):
-```
-PORT=5001
-MONGO_URI=.....
-JWT_SECRET=clave_larga
-ENCRYPTION_KEY=32_caracteres_exactos
-CORS_ORIGIN=http://localhost:5173
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=http://localhost:5001/api/gmail/callback
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
-AWS_S3_BUCKET=dte-zips
-FRONTEND_URL=http://localhost:5173
-# opcional
-GOOGLE_API_TIMEOUT_MS=60000
-```
+- Eliminates manual downloading of invoices from email
+- Prevents duplicate files (same attachment or repeated filenames)
+- Produces consistent, accountant-friendly ZIP packages
+- Keeps a history of generated packages with secure downloads
+- Supports role-based access for different user responsibilities
 
-Frontend (`frontend/.env`):
-```
-VITE_API_URL=http://localhost:5001/api
-```
+---
 
-## Setup rápido
-Backend:
-```
-cd backend
-npm install
-npm run dev    # nodemon
-# producción local:
-# npm run build (si aplica) && npm start
-```
+## Core features
 
-Frontend:
-```
-cd frontend
-npm install
-npm run dev    # http://localhost:5173
-# producción:
-# npm run build && npm run preview
-```
+- Gmail integration using OAuth (read-only access)
+- Invoice search by date range and subject keywords
+- Automatic deduplication of attachments
+- ZIP generation with a clear internal structure:
+  - PDFs and JSON grouped by email
+  - Flat folder containing only PDFs
+  - Metadata file with generation details
+- Secure upload to AWS S3 with signed download URLs
+- Package history and execution tracking
+- Role-based access control (viewer, basic, admin)
 
-## Flujo principal (usuario basic/admin)
-1) Registrarse (pide nombre, email, contraseña, DUI) y login. El rol por defecto es viewer; un admin puede cambiarlo a basic.
-2) Conectar Gmail desde el dashboard (botón abre OAuth). Guardamos refresh token cifrado.
-3) Buscar facturas por rango de fechas: combina keywords base + custom. Trae PDFs/JSON, deduplica por attachmentId y por nombre de PDF dentro del mismo correo.
-4) Genera ZIP con estructura:
-   - `JSON_y_PDFS/<correo>` con PDFs/JSON por email
-   - `SOLO_PDF/` con todos los PDFs planos
-   - `INFO.txt` con rango, correo conectado y fecha de generación
-5) Sube el ZIP a S3. Guarda metadatos en MongoDB (pdfCount, jsonCount, size, storageKey, batchLabel). Descarga vía URL firmada.
+---
 
-## Rutas clave (resumen)
-- Auth: login/register/me/logout, forgot/reset password.
-- Gmail: status, auth URL, callback, disconnect, search.
-- Keywords: listar base+custom, agregar/eliminar custom.
-- Packages: generar, listar, último, descargar (S3 signed URL).
-- Admin: listar usuarios con stats, ver detalle, reset password, cambiar rol, eliminar usuario.
+## Tech stack
 
-## Notas de operación
-- No subas `.env`, `uploads/`, `node_modules/`, ni builds al repo.
-- Ajusta `maxResults`/concurrencia en `gmailService` si necesitas más o menos velocidad.
-- S3: el nombre del ZIP usa el batch label (ej. `2025-12.zip`); se limpia el temporal local tras subir.
-- Viewer no puede buscar ni generar; basic/admin sí. Admin ve la página de Administración de Usuarios en el frontend.
+**Backend**
+- Node.js + Express
+- MongoDB Atlas
+- Google Gmail API (OAuth 2.0)
+- AWS S3 (ZIP storage)
 
-## Demo rápida para un cliente (local)
-- Backend en `:5001`, frontend en `:5173`.
-- En MongoDB Atlas, permite tu IP temporalmente para la demo.
-- En Google Cloud, añade al menos tu correo como Test User del OAuth consent.
-- Revisa que las variables de AWS S3 y Gmail estén cargadas antes de probar generación/descarga.
+**Frontend**
+- React (Vite)
+- Tailwind CSS
+- Axios
+- React Router
+
+**Security & Infrastructure**
+- JWT-based authentication
+- Encrypted storage of OAuth refresh tokens
+- Environment-based configuration
+- Signed URLs for private file access
+
+---
+
+## High-level flow
+
+1. User authenticates and connects a Gmail account
+2. The system searches emails using configured keywords and date ranges
+3. Invoice attachments (PDF/JSON) are extracted and deduplicated
+4. A structured ZIP package is generated
+5. The package is uploaded to S3 and made available via a signed URL
+6. Metadata is stored for history and auditing
+
+---
+
+## Project structure
+backend/    REST API, services, integrations, business logic
+---
+
+## Configuration
+
+Sensitive configuration (database, OAuth, AWS, secrets) is handled via environment variables.
+Real credentials are never committed to the repository.
+
+---
+
+## Notes
+
+- Gmail access is strictly read-only
+- No invoice content is permanently stored outside generated packages
+- Temporary files are cleaned up after ZIP generation
+- The system is designed for real accounting workflows, not demos
+
+---
+
+## Status
+
+This project represents a production-style system built end-to-end, focusing on reliability, security, and real-world use cases.
