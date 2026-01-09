@@ -178,6 +178,9 @@ exports.handleCallback = asyncHandler(async (req, res) => {
             targetAccount.status = 'active';
             targetAccount.primary = true;
             targetAccount.disabledAt = null;
+            targetAccount.authState = 'ok';
+            targetAccount.lastAuthError = null;
+            targetAccount.lastAuthErrorAt = null;
             await targetAccount.save();
             await GmailConnection.updateMany(
                 { user: userId, _id: { $ne: targetAccount._id } },
@@ -200,6 +203,9 @@ exports.handleCallback = asyncHandler(async (req, res) => {
                 existing.status = 'active';
                 existing.primary = true;
                 existing.disabledAt = null;
+                existing.authState = 'ok';
+                existing.lastAuthError = null;
+                existing.lastAuthErrorAt = null;
                 await existing.save();
             } else {
                 await GmailConnection.create({
@@ -207,6 +213,7 @@ exports.handleCallback = asyncHandler(async (req, res) => {
                     email,
                     refreshToken: encryptedRefresh,
                     status: 'active',
+                    authState: 'ok',
                     primary: true
                 });
             }
@@ -234,6 +241,7 @@ exports.handleCallback = asyncHandler(async (req, res) => {
                 email,
                 refreshToken: encryptedRefresh,
                 status: 'active',
+                authState: 'ok',
                 primary: !hasPrimary
             });
         } else {
@@ -242,6 +250,9 @@ exports.handleCallback = asyncHandler(async (req, res) => {
             const hasPrimary = await GmailConnection.exists({ user: userId, primary: true, status: 'active' });
             if (!hasPrimary) existing.primary = true;
             existing.disabledAt = null;
+            existing.authState = 'ok';
+            existing.lastAuthError = null;
+            existing.lastAuthErrorAt = null;
             await existing.save();
         }
     }
@@ -318,6 +329,7 @@ exports.searchInvoices = asyncHandler(async (req, res) => {
 exports.status = asyncHandler(async (req, res) => {
     const conns = await GmailConnection.find({ user: req.user.id, status: { $in: ['active', 'disabled'] } }).select('-refreshToken');
     const activeConns = conns.filter((c) => c.status === 'active');
+    const activeOk = activeConns.filter((c) => (c.authState || 'ok') !== 'expired');
     if (!conns.length) {
         return res.json({ connected: false, accounts: [] });
     }
@@ -360,6 +372,8 @@ exports.status = asyncHandler(async (req, res) => {
             connectedAt: c.createdAt,
             primary: !!c.primary,
             status: c.status,
+            authState: c.authState || 'ok',
+            authError: c.lastAuthError || null,
             stats: {
                 totalPackages: st.totalPackages || 0,
                 totalJson: st.totalJson || 0,
@@ -370,7 +384,7 @@ exports.status = asyncHandler(async (req, res) => {
     });
 
     res.json({
-        connected: activeConns.length > 0,
+        connected: activeOk.length > 0,
         accounts
     });
 });
@@ -420,10 +434,20 @@ exports.getFreshAccessToken = async (userId, accountId = null) => {
             err.code = 'REFRESH_FAILED';
             throw err;
         }
+        if (conn.authState === 'expired' || conn.lastAuthError) {
+            conn.authState = 'ok';
+            conn.lastAuthError = null;
+            conn.lastAuthErrorAt = null;
+            await conn.save();
+        }
         return credentials.access_token;
     } catch (err) {
         if (err.code === 'DECRYPT_FAILED') throw err;
-        const error = new Error(err.message || 'Refresh token invalid or expired');
+        conn.authState = 'expired';
+        conn.lastAuthError = err.message || 'Refresh token invalid or expired';
+        conn.lastAuthErrorAt = new Date();
+        await conn.save();
+        const error = new Error('Token de Google expirado o revocado. Reconecta tu cuenta.');
         error.code = err.code === 'REFRESH_FAILED' ? 'REAUTH_REQUIRED' : err.code;
         throw error;
     }

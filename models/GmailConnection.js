@@ -20,6 +20,17 @@ const GmailConnectionSchema = new mongoose.Schema(
             enum: ['active', 'disabled'],
             default: 'active'
         },
+        authState: {
+            type: String,
+            enum: ['ok', 'expired'],
+            default: 'ok'
+        },
+        lastAuthError: {
+            type: String
+        },
+        lastAuthErrorAt: {
+            type: Date
+        },
         primary: {
             type: Boolean,
             default: false

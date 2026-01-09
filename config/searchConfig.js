@@ -21,6 +21,8 @@ const baseKeywords = [
   'Factura electronica',
   'Facturación electrónica',
   'Facturacion electronica',
+  'Facturación',
+  'Facturacion',
   'Factura digital',
   'Facturación digital',
   'Facturación Digital',

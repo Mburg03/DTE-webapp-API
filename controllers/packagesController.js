@@ -124,7 +124,16 @@ exports.generate = asyncHandler(async (req, res) => {
     }
 
     // Access token fresco
-    const accessToken = await require('./gmailController').getFreshAccessToken(targetConn.user, targetConn._id);
+    let accessToken;
+    try {
+        accessToken = await require('./gmailController').getFreshAccessToken(targetConn.user, targetConn._id);
+    } catch (err) {
+        if (err.code === 'REAUTH_REQUIRED') {
+            res.status(401);
+            throw err;
+        }
+        throw err;
+    }
 
     // Keywords
     const kwDoc = await Keywords.findOne({ user: userId });
